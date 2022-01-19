@@ -1,9 +1,7 @@
 using POMDPs, POMDPGym, POMDPSimulators, POMDPPolicies, Distributions, Plots
 using Crux, Flux
 using BSON
-
-dt = 0.1
-maxT = 1.0
+using ImportanceWeightedRiskMetrics
 
 ## Setup and solve the mdp
 mdp = InvertedPendulumMDP(λcost=1, Rstep=.1, dt=dt, px=Normal(0f0, 0.1f0))
@@ -17,15 +15,30 @@ Crux.gif(mdp, policy, "out.gif", max_steps=100,)
 
 
 ## Construct the risk estimation mdp where actions are disturbances
+dt = 0.1
+maxT = 2.0
+# px = Normal(0f0, 0.35f0)
+px = Normal(0f0, 1.0f0)
+
+# cost environment
 env = InvertedPendulumMDP(dt=dt, failure_thresh=Inf)
 costfn(m, s, sp) = isterminal(m, sp) ? abs(sp[2]) : 0
 rmdp = RMDP(env, policy, costfn, true, dt, maxT)
 
+# Failure environment
+env = InvertedPendulumMDP(dt=dt, failure_thresh=π/2)
+costfn(m, s, sp) = isterminal(m, sp) ? isfailure(m, sp) : 0
+rmdp = RMDP(env, policy, costfn, true, dt, maxT)
 
 
+samps = [simulate(RolloutSimulator(), rmdp, FunctionPolicy((s) -> rand(px))) for _=1:10000]
+
+m = IWRiskMetrics(samps, ones(length(samps)), 0.01)
 
 
-samps = [simulate(RolloutSimulator(), rmdp, FunctionPolicy((s) -> 0)) for _=1:1000]
-
-histogram(samps)
+histogram(samps, alpha=0.5, label="MC")
+vline!([m.mean], label="mean", color=1)
+vline!([m.var], label="var", linestyle=:dashdot, color=1)
+vline!([m.cvar], label="cvar", linestyle=:dash, color=1)
+vline!([m.worst], label="worst case", linestyle=:dot, color=1)
 

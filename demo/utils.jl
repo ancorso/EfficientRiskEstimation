@@ -37,12 +37,6 @@ function compute_risk_cb(period, min_samples_above = 0.1)
     end
 end
 
-function log_err_pf(π, D, ys)
-    N = length(ys)
-    
-    sum([abs.(log.(value(n, D[:s], D[:a]) .+ eps())  .-  log.(y  .+ eps())) for (n, y) in zip(π.networks[1:N], ys)])    
-end
-
 
 function running_risk_metrics(Z, w, α, Nsteps=10)
     imax = log10(length(Z))
@@ -56,7 +50,7 @@ end
 
 
 function make_plots(Zs, ws, names, α, Nsteps=10)
-    mean_plot=plot(title="Mean", legend=:bottomright)
+    mean_plot=plot(title="Mean", legend=:bottomright, xscale=:log10)
     var_plot=plot(title="VaR", legend=:bottomright)
     cvar_plot=plot(title="CVaR", legend=:bottomright)
     worst_case=plot(title="Worst_case", legend=:bottomright)

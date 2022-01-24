@@ -80,15 +80,20 @@ min_samples_l = [0.01, 0.1, 0.5]
 N_l = [10_000, 100_000]
 
 df = DataFrame(alpha=Float64[], priority_fn=String[], use_lw=String[], min_sample=Float64[], N=Integer[],
-               var_err=Float64[], cvar_err=Float64[])
+               var_err_1em1=Float64[], cvar_err_1em1=Float64[],
+               var_err_1em2=Float64[], cvar_err_1em2=Float64[],
+               var_err_1em3=Float64[], cvar_err_1em3=Float64[])
 
 all_params = [p for p in Iterators.product(α_l, priority_fn_l, use_likelihood_weights_l, min_samples_l, N_l)]
 for (idx, params) in enumerate(all_params)
-    println("Running ", idx, " / ", length(all_params))
+    println("Running ", idx, " / ", length(all_params), " at ",
+            Dates.format(Dates.now(), "HH:MM"))
     α, priority_fn, use_lw, min_samples, N = params
     try
         drl_samps, drl_weights = run_drl(α, priority_fn, use_lw, min_samples, N)
-        min_var_rel, min_cvar_rel = compute_error(α, mc_samps, mc_weights, drl_samps, drl_weights)
+        var_rel_1em1, cvar_rel_1em1 = compute_error(1e-1, mc_samps, mc_weights, drl_samps, drl_weights)
+        var_rel_1em2, cvar_rel_1em2 = compute_error(1e-2, mc_samps, mc_weights, drl_samps, drl_weights)
+        var_rel_1em3, cvar_rel_1em3 = compute_error(1e-3, mc_samps, mc_weights, drl_samps, drl_weights)
         global df
         push!(df,
               [α,
@@ -96,7 +101,9 @@ for (idx, params) in enumerate(all_params)
                use_lw ? "true" : "false",
                min_samples,
                N,
-               min_var_rel, min_cvar_rel]);
+               var_rel_1em1, cvar_rel_1em1,
+               var_rel_1em2, cvar_rel_1em2,
+               var_rel_1em3, cvar_rel_1em3]);
         if idx % 20 == 0
             CSV.write(string(output_dir, "/drl_dp_", idx, ".csv"), df)
         end

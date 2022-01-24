@@ -65,3 +65,14 @@ function make_plots(Zs, ws, names, α, Nsteps=10)
     plot(mean_plot, var_plot, cvar_plot, worst_case, layout=(2,2))
 end
 
+
+function log_err_pf(π, D, ys)
+    N = length(ys)
+    sum([abs.(log.(value(n, D[:s], D[:a]) .+ eps())  .-  log.(y  .+ eps())) for (n, y) in zip(π.networks[1:N], ys)])    
+end
+
+
+function abs_err_pf(π, D, ys)
+    N = length(ys)
+    sum([abs.(value(n, D[:s], D[:a])  .-  y) for (n, y) in zip(π.networks[1:N], ys)])
+end

@@ -1,11 +1,11 @@
-using CSV, DataFrames
+using CSV, DataFrames, Dates
 using POMDPs, POMDPGym, POMDPSimulators, POMDPPolicies, Distributions, Plots
 using Crux, Flux, BSON, ImportanceWeightedRiskMetrics
 
 include("utils.jl")
 include("discrete_exploration.jl")
 
-output_dir = "/Users/kykim/Desktop" # Change as needed.
+output_dir = "/home/kykim/Desktop" # Change as needed.
 
 policy = BSON.load("policies/pendulum_policy.bson")[:policy]
 
@@ -45,30 +45,11 @@ function run_drl(α, priority_fn, use_likelihood_weights, min_samples, N)
                       log=(;period=10_000_000), 
                       π_explore=πexplore, 
                       N=N,
-                      c_loss=multi_td_loss(names=["Q_CDF", "Q_CVaR"], loss=Flux.Losses.msle, weight=:weight),
+                      c_loss=multi_td_loss(names=["Q_CDF", "Q_CVaR"], loss=Flux.Losses.msle, weight=nothing),
                       S=state_space(rmdp))
     solve(𝒮, rmdp)
     drl_samps, drl_weights = get_samples(𝒮.buffer, px)
     return drl_samps, drl_weights
-end
-
-
-# Compute the error and save the results out to a csv.
-function compute_error(α, mc_samps, mc_weights, drl_samps, drl_weights)
-    ground_truth = IWRiskMetrics(mc_samps, mc_weights, α)
-
-    # Take subsets of the samples and compute the min error.
-    min_var_rel, min_cvar_rel = Inf, Inf
-    l = length(drl_samps)
-    p = l ÷ 10
-    for n in p:p:l
-        drl_risk_metrics = IWRiskMetrics(drl_samps[1:n], drl_weights[1:n], α)
-        var_rel_err = abs(ground_truth.var - drl_risk_metrics.var) / ground_truth.var
-        cvar_rel_err = abs(ground_truth.cvar - drl_risk_metrics.cvar) / ground_truth.cvar
-        min_var_rel = min(min_var_rel, var_rel_err)
-        min_cvar_rel = min(min_cvar_rel, cvar_rel_err)
-    end
-    return min_var_rel, min_cvar_rel
 end
 
 
@@ -113,4 +94,4 @@ for (idx, params) in enumerate(all_params)
     end
 end
 
-CSV.write(string(output_dir, "/drl_dp.csv", df)
+CSV.write(string(output_dir, "/drl_dp.csv"), df)

@@ -1,4 +1,6 @@
 using Plots
+using ImportanceWeightedRiskMetrics
+
 
 function get_samples(buffer::ExperienceBuffer, px)
     eps = episodes(buffer)
@@ -12,6 +14,7 @@ function get_samples(buffer::ExperienceBuffer, px)
     end
     vals, weights
 end
+
 
 function compute_risk_cb(period, min_samples_above = 0.1)
     (𝒮; info=info) -> begin
@@ -75,4 +78,22 @@ end
 function abs_err_pf(π, D, ys)
     N = length(ys)
     sum([abs.(value(n, D[:s], D[:a])  .-  y) for (n, y) in zip(π.networks[1:N], ys)])
+end
+
+
+function compute_error(α, mc_samps, mc_weights, drl_samps, drl_weights)
+    ground_truth = IWRiskMetrics(mc_samps, mc_weights, α)
+
+    # Take subsets of the samples and compute the min error.
+    min_var_rel, min_cvar_rel = Inf, Inf
+    l = length(drl_samps)
+    p = l ÷ 10
+    for n in p:p:l
+        drl_risk_metrics = IWRiskMetrics(drl_samps[1:n], drl_weights[1:n], α)
+        var_rel_err = abs(ground_truth.var - drl_risk_metrics.var) / ground_truth.var
+        cvar_rel_err = abs(ground_truth.cvar - drl_risk_metrics.cvar) / ground_truth.cvar
+        min_var_rel = min(min_var_rel, var_rel_err)
+        min_cvar_rel = min(min_cvar_rel, cvar_rel_err)
+    end
+    return min_var_rel, min_cvar_rel
 end

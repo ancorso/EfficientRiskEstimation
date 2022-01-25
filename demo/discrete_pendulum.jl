@@ -56,16 +56,6 @@ risk_metrics.worst
 πexplore = DiscreteExploration((s) -> pxs)
 D_CDF() = DiscreteNetwork(Chain(Dense(3, 128, relu), Dense(128, 3, sigmoid)), xs) # Low priority, hyperparameter
 D_CVaR() = DiscreteNetwork(Chain(Dense(3, 128, relu), Dense(128, 3, softplus)), xs) # Low priority, hyperparameter
-
-function log_err_pf(π, D, ys)
-    N = length(ys)
-    sum([abs.(log.(value(n, D[:s], D[:a]) .+ eps())  .-  log.(y  .+ eps())) for (n, y) in zip(π.networks[1:N], ys)])    
-end
-
-function abs_err_pf(π, D, ys)
-    N = length(ys)
-    sum([abs.(value(n, D[:s], D[:a])  .-  y) for (n, y) in zip(π.networks[1:N], ys)])
-end
     
 𝒮 = CERL_Discrete(π=MixtureNetwork([D_CDF(), D_CVaR(), px], [0.45, 0.45, 0.1]), 
                   px=px,
@@ -77,7 +67,7 @@ end
                   log=(;period=1000), 
                   π_explore=πexplore, 
                   N=100000, # Number of steps in the environment
-                  c_loss=multi_td_loss(names=["Q_CDF", "Q_CVaR"], loss=Flux.Losses.msle, weight=:weight), # if prioritized, then weight=nothing. loss can be: [Flux.Losses.msle, Flux.Losses.mse] <- ablation
+                  c_loss=multi_td_loss(names=["Q_CDF", "Q_CVaR"], loss=Flux.Losses.msle, weight=nothing), # if prioritized, then weight=nothing. loss can be: [Flux.Losses.msle, Flux.Losses.mse] <- ablation
                   S=state_space(rmdp))
 solve(𝒮, rmdp)
 drl_samps, drl_weights = get_samples(𝒮.buffer, px)
@@ -85,8 +75,6 @@ drl_samps, drl_weights = get_samples(𝒮.buffer, px)
 risk_metrics = IWRiskMetrics(drl_samps[1:1000], drl_weights[1:1000], 0.01)
 
 #TODO: Compute error to ground truth abs(gt - est) / gt
-
-
 
 ## Plot the value function map
 heatmap(-3:0.01:3, -3:0.01:3, (x,y)->log(value(𝒮.agent.π.networks[1], [0.1, x, y])[1]))
@@ -97,4 +85,3 @@ histogram!(mc_samps, bins=0:0.1:3)
 
 # Make the plots
 make_plots([mc_samps, drl_samps], [mc_weights, drl_weights], ["MC", "DRL"], 1e-5)
-

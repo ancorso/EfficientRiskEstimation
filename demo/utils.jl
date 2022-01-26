@@ -1,4 +1,33 @@
-using Plots
+using Plots, Random
+
+function plot_pendulum(mdp, pol, i; ps = plot(), px = plot(), π_explore=pol, Neps=10, label="", skwargs=(;), xkwargs=(;))
+    sampler = Sampler(mdp, PolicyParams(π=pol, π_explore=π_explore))
+    D = ExperienceBuffer(episodes!(sampler, Neps=Neps, explore=true))
+    plot!(ps, [], color=i, label=label; skwargs...)
+    plot!(px, [], color=i, label=label; xkwargs...)
+    # D[:s][2, D[:s][2, :] .> 1] .*= -1.
+    epies = episodes(D)
+    for e in epies
+        ir = e[1]:e[2]
+        plot!(ps, D[:s][1, ir], D[:s][2, ir], color=i, label="", alpha=0.5)
+        if size(D[:a], 1) > 1
+            plot!(px, D[:s][1, ir], discrete_xs[Flux.onecold(D[:a][:, ir])], color=i, label="", alpha=0.5)
+        else
+            plot!(px, D[:s][1, ir], D[:a][1, ir], color=i, label="", alpha=0.5)
+        end
+    end
+    plot(ps, px, layout=(2,1))
+end
+
+function log_err_pf(π, D, ys)
+    N = length(ys)
+    sum([abs.(log.(value(n, D[:s], D[:a]) .+ eps())  .-  log.(y  .+ eps())) for (n, y) in zip(π.networks[1:N], ys)])    
+end
+
+function abs_err_pf(π, D, ys)
+    N = length(ys)
+    sum([abs.(value(n, D[:s], D[:a])  .-  y) for (n, y) in zip(π.networks[1:N], ys)])
+end
 
 function get_samples(buffer::ExperienceBuffer, px)
     eps = episodes(buffer)
@@ -15,23 +44,40 @@ end
 
 function compute_risk_cb(period, min_samples_above = 0.1)
     (𝒮; info=info) -> begin
-        if ((𝒮.i + 𝒮.ΔN) % period) == 0
+        if isnan(𝒮.𝒫[:rα][1]) || ((𝒮.i + 𝒮.ΔN) % period) == 0
             α = 𝒮.𝒫[:α]
             px = 𝒮.𝒫[:px]
             vals, weights = get_samples(𝒮.buffer, px)
             m = IWRiskMetrics(vals, weights, α)
+            # m10 = IWRiskMetrics(vals, weights, 2f0*α)
+            
+            N = length(vals)
+            # samps = min(Int(floor(N/2)), 100)
+            # vars = [IWRiskMetrics(vals[rand(MersenneTwister(i), 1:N, samps)], weights[rand(MersenneTwister(i), 1:N, samps)], α).var for i=1:10]
+            
+            
+            
             mfallback = IWRiskMetrics(vals, ones(length(vals)), min_samples_above)
             
             𝒮.𝒫[:rα][1] = min(m.var, mfallback.var)
+            # 𝒮.𝒫[:std_rα][1] = 0.5 #Float32(𝒮.𝒫[:rα][1]) /log(N) #Float32(std(vars))
             
             # Log the metrics
+            # info["std_var"] = 𝒮.𝒫[:std_rα][1]
             info["var"] = m.var
             info["cvar"] = m.cvar
             info["mean"] = m.mean
             info["worst"] = m.worst
             info["target_var"] = 𝒮.𝒫[:rα][1]
             
+            info["last_weights"] = mean(weights[max(1,length(weights)-period):end])
+            
+            w = weights[vals .>= m.var]
+            info["effective_sample_size"] = sum(w)^2 / sum(w.^2)
+            
             # Update the running estimate of var
+            
+            # Crux.fill_probs(𝒮.buffer, 𝒮=𝒮)
             
         end
     end

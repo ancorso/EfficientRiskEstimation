@@ -67,6 +67,7 @@ risk_metrics.mean
 risk_metrics.worst
 
 ## Setup and run deep rl approach
+<<<<<<< HEAD
 function estimator_logits(vals, s)
     probs = Crux.logits(px_discrete, s)
     ps = vals .* probs
@@ -74,6 +75,11 @@ function estimator_logits(vals, s)
 end
 D_CDF() = DiscreteNetwork(Chain(Dense(3, 64, relu), Dense(64,64,relu), Dense(64, length(discrete_xs), sigmoid)), discrete_xs, estimator_logits, true) # Low priority, hyperparameter
 D_CVaR() = DiscreteNetwork(Chain(Dense(3, 64, relu), Dense(64,64,relu), Dense(64, length(discrete_xs), sigmoid), x->x.*3.15f0), discrete_xs, estimator_logits, true) # Low priority, hyperparameter
+=======
+πexplore = DiscreteExploration((s) -> pxs)
+D_CDF() = DiscreteNetwork(Chain(Dense(3, 128, relu), Dense(128, 3, sigmoid)), xs) # Low priority, hyperparameter
+D_CVaR() = DiscreteNetwork(Chain(Dense(3, 128, relu), Dense(128, 3, softplus)), xs) # Low priority, hyperparameter
+>>>>>>> 8bb38a6b679b33788349575d242ba78cb623dabc
     
 𝒮 = ISDRL_Discrete(π=MixtureNetwork([D_CDF(), D_CVaR(), px_discrete], [0.5, 0.5, 0.0]), 
                   px=px_discrete,
@@ -215,4 +221,3 @@ histogram!(mc_samps, bins=0:0.1:3)
 
 # Make the plots
 make_plots([mc_samps, drl_samps], [mc_weights, drl_weights], ["MC", "DRL"], 1e-5)
-

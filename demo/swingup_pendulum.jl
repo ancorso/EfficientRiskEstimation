@@ -118,28 +118,48 @@ plot(ps, legend=:bottomleft)
 
 
 ## Setup and run deep rl approach
+function cdf_td_loss(loss)
+    (π, 𝒫, 𝒟, y; info=Dict()) -> begin
+        s = Zygote.ignore() do
+            B = length(𝒟[:r])
+            z = reshape(repeat(𝒫[:rs], 1, B)', 1, :)
+            s = repeat(𝒟[:s], 1, length(𝒫[:rs]))
+            vcat(z, s)
+        end
+        Q = value(critic(π), s, 𝒟[:a])
+        
+        # Store useful information
+        ignore() do
+            info[name] = mean(Q)
+        end
+        
+        loss(Q, y)
+    end
+end
+
 function estimator_logits(vals, s)
     probs = Crux.logits(px_discrete, s)
     ps = vals .* probs
     ps ./ sum(ps, dims=1)
 end
 
-D_CDF() = DiscreteNetwork(Chain(Dense(3, 64, tanh), Dense(64, 64, tanh), Dense(64, length(discrete_xs), sigmoid)), discrete_xs, estimator_logits, true)
-D_CVaR() = DiscreteNetwork(Chain(Dense(3, 64, tanh), Dense(64, 64, tanh), Dense(64, length(discrete_xs), sigmoid), x->x.*3.15f0), discrete_xs, estimator_logits, true)
-
-𝒮 = ISDRL_Discrete(π=MixtureNetwork([D_CDF(), D_CVaR(), px_discrete], [0.45, 0.45, 0.1]), 
+D_CDF() = LatentConditionedNetwork(DiscreteNetwork(Chain(Dense(4, 64, tanh), Dense(64, 64, tanh), Dense(64, length(discrete_xs), sigmoid)), discrete_xs, estimator_logits, true), [0f0])
+# D_CVaR() = DiscreteNetwork(Chain(Dense(3, 64, tanh), Dense(64, 64, tanh), Dense(64, length(discrete_xs), sigmoid), x->x.*3.15f0), discrete_xs, estimator_logits, true)
+N_cdf=10
+𝒮 = ISDRL_Discrete(π=D_CDF()), 
                   px=px_discrete,
                   priority_fn=abs_err_pf, #log_err_pf, abs_err_pf
                   ΔN=20,
+                  N_cdf=N_cdf,
                   α=1e-3, # experiment parameter
                   prioritized=true, # false <- ablation
                   use_likelihood_weights=false, #false (hyperparameter)
-                  pre_train_callback=compute_risk_cb(1000, 0.1), # [0.01, 0.1, 0.5] 0.1 is the minmum fraction of samples in tail. (hyperparameter)
+                  pre_train_callback=compute_risk_cb(1000, 0.1, N_cdf=N_cdf), # [0.01, 0.1, 0.5] 0.1 is the minmum fraction of samples in tail. (hyperparameter)
                   log=(;period=1000),
                   # c_opt=(;batch_size=512),
                   π_explore=MixedPolicy(Crux.LinearDecaySchedule(0.3, 0.02, 200000), px_uniform), 
                   N=200000, # Number of steps in the environment
-                  c_loss=multi_td_loss(names=["Q_CDF", "Q_CVaR"], loss=Flux.Losses.msle, weight=:weight), # if prioritized, then weight=nothing. loss can be: [Flux.Losses.msle, Flux.Losses.mse] <- ablation
+                  c_loss=cdf_td_loss(loss=Flux.Losses.msle), # if prioritized, then weight=nothing. loss can be: [Flux.Losses.msle, Flux.Losses.mse] <- ablation
                   S=state_space(rmdp))
 solve(𝒮, rmdp)
 

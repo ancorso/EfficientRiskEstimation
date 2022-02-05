@@ -34,7 +34,7 @@ function get_samples(buffer::ExperienceBuffer, px)
 end
 
 
-function compute_risk_cb(period, min_samples_above = 0.1)
+function compute_risk_cb(period, min_samples_above = 0.1, N_cdf)
     (𝒮; info=info) -> begin
         if isnan(𝒮.𝒫[:rα][1]) || ((𝒮.i + 𝒮.ΔN) % period) == 0
             α = 𝒮.𝒫[:α]
@@ -43,15 +43,17 @@ function compute_risk_cb(period, min_samples_above = 0.1)
             m = IWRiskMetrics(vals, weights, α)
             # m10 = IWRiskMetrics(vals, weights, 2f0*α)
             
-            N = length(vals)
+            # N = length(vals)
             # samps = min(Int(floor(N/2)), 100)
             # vars = [IWRiskMetrics(vals[rand(MersenneTwister(i), 1:N, samps)], weights[rand(MersenneTwister(i), 1:N, samps)], α).var for i=1:10]
             
             
             
-            mfallback = IWRiskMetrics(vals, ones(length(vals)), min_samples_above)
+            # mfallback = IWRiskMetrics(vals, ones(length(vals)), min_samples_above)
             
-            𝒮.𝒫[:rα][1] = min(m.var, mfallback.var)
+            𝒮.𝒫[:rα][1] = m.var #min(m.var, mfallback.var)
+            𝒮.𝒫[:rs] = range(minimum(vals), stop=m.var, steps=N_cdf)
+            𝒮.agent.π.reset_fn = (π) -> π.z = [rand(𝒮.𝒫[:rs])]
             # 𝒮.𝒫[:std_rα][1] = 0.5 #Float32(𝒮.𝒫[:rα][1]) /log(N) #Float32(std(vars))
             
             # Log the metrics

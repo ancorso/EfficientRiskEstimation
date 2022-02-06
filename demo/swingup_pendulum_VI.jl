@@ -49,7 +49,7 @@ function optimal_var_policy(mdp, target, θs=range(-π, π, length=21), ωs = ra
         for (ai, a) in enumerate(as)
             s′, r = gen(mdp, s, a)
             Q[ai][si] = abs(r) > target
-            Q[ai][si] += isterminal(mdp, s′) ? 0.0 : GridInterpolations.interpolate(grid, U, [maxT-s′[1], s′[2:end]...])
+            Q[ai][si] += isterminal(mdp, s′) ? 0.0 : GridInterpolations.interpolate(grid, U,[ s′[2:end]..., maxT-s′[1]])
         end
         probs = softmax(discrete_logpdfs(s))
         U[si] = sum(p*q[si] for (q, p) in zip(Q, probs))
@@ -63,5 +63,5 @@ q3 = Q[3]
 
 Q
 
-heatmap(range(-π, π, length=21), range(-8, 8, length=41), (x,y) -> GridInterpolations.interpolate(g, q3, [0.2, x, y]))
+heatmap(range(-π, π, length=21), range(-8, 8, length=41), (x,y) -> GridInterpolations.interpolate(g, q3, [x, y, 5.0]))
 

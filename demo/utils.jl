@@ -34,7 +34,7 @@ function get_samples(buffer::ExperienceBuffer, px)
 end
 
 
-function compute_risk_cb(period, min_samples_above = 0.1, N_cdf)
+function compute_risk_cb(period, min_samples_above = 0.1; N_cdf)
     (𝒮; info=info) -> begin
         if isnan(𝒮.𝒫[:rα][1]) || ((𝒮.i + 𝒮.ΔN) % period) == 0
             α = 𝒮.𝒫[:α]

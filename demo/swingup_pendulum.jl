@@ -1,11 +1,12 @@
 using POMDPs, POMDPGym, POMDPSimulators, POMDPPolicies, Distributions, Plots
-using Crux, Flux, BSON, ImportanceWeightedRiskMetrics
+using Crux, Flux, BSON, ImportanceWeightedRiskMetrics, Zygote
 include("utils.jl")
 include("cem.jl")
 
 ## Setup and solve the mdp
 dt = 0.2
 mdp = PendulumMDP(λcost=1, dt=dt)
+
 # 
 # amin = [-2f0]
 # amax = [2f0]
@@ -33,7 +34,7 @@ mdp = PendulumMDP(λcost=1, dt=dt)
 policy = BSON.load("policies/swingup_policy.bson")[:policy]
 Crux.gif(mdp, policy, "out.gif", max_steps=20, Neps=10)
 # 
-# heatmap(-3:0.1:3, -8:0.1:8, (x,y) -> action(policy, [x,y])[1])
+heatmap(-3:0.1:3, -8:0.1:8, (x,y) -> action(policy, [x,y])[1])
 
 
 ## Construct the risk estimation mdp where actions are disturbances
@@ -53,8 +54,8 @@ function discrete_logpdfs(s)
    end
    out
 end
-px_discrete = DiscreteNetwork(s -> discrete_logpdfs(s), discrete_xs, (vals,s) -> softmax(vals), true)
-px_uniform = DiscreteNetwork(s -> ones(Float32, length(discrete_xs), size(s)[2:end]...), discrete_xs, (vals,s) -> softmax(vals), true)
+px_discrete = DiscreteNetwork(s -> discrete_logpdfs(s), discrete_xs, (π,s) -> softmax(value(π,s)), true)
+px_uniform = DiscreteNetwork(s -> ones(Float32, length(discrete_xs), size(s)[2:end]...), discrete_xs, (π,s) -> softmax(value(π,s)), true)
 
 # cost environment
 env = PendulumMDP(dt=dt, θ0=Uniform(1.5, 1.6))
@@ -66,22 +67,36 @@ ps = plot()
 px = plot()
 
 ## Make some plots of mc
-mc_samps = [simulate(RolloutSimulator(), rmdp, FunctionPolicy((s) -> exploration(px_discrete, s)[1][1])) for _=1:Int(1e4)]
+# mc_samps = [simulate(RolloutSimulator(), rmdp, FunctionPolicy((s) -> exploration(px_discrete, s)[1][1])) for _=1:Int(1e6)]
 
-histogram(mc_samps, ylims=(0,1), xlims=(0,3))
+# histogram(mc_samps, ylims=(0,1), xlims=(0,3))
 
-# BSON.@save "data/200thou_mcsamps_discreteswingup_$(σ²).bson" mc_samps 
+# BSON.@save "data/1mil_mcsamps_discreteswingup_$(σ²).bson" mc_samps 
 
-# mc_samps = BSON.load("data/200thou_mcsamps_discreteswingup_$(σ²).bson")[:mc_samps]
+mc_samps = BSON.load("data/1mil_mcsamps_discreteswingup_$(σ²).bson")[:mc_samps]
 mc_weights = ones(length(mc_samps))
-histogram(mc_samps, ylims=(0,1))
+# histogram(mc_samps, ylims=(0,1))
+
 
 # compute risk metrics
-risk_metrics = IWRiskMetrics(mc_samps_orig, mc_weights, 0.001)
+risk_metrics = IWRiskMetrics(mc_samps, mc_weights, 0.001, 10)
 risk_metrics.cvar
 risk_metrics.var
+histogram(risk_metrics.bootstrap_vars)
+std(risk_metrics.bootstrap_vars)
+plot(0.1:0.1:1, risk_metrics.var_cdf)
+
+
+histogram(risk_metrics.bootstrap_vars)
+
+
 risk_metrics.mean
 risk_metrics.worst
+
+risk_metrics.est.Ws[end - 1000 + 1:end]
+
+risk_metrics.est.Ws[]
+mean(risk_metrics.est.Ws[end:end - 1000 + 1].^2)
 
 plot_pendulum(rmdp, px_discrete, 1, Neps=100, ps=ps, px=px, label="MC - discrete")
 plot_pendulum(rmdp, px_continuous, 2, Neps=1000, px=px, ps=ps, label="MC - continuous")
@@ -118,39 +133,79 @@ plot(ps, legend=:bottomleft)
 
 
 ## Setup and run deep rl approach
-function cdf_td_loss(loss)
+function cdf_td_loss(;loss)
     (π, 𝒫, 𝒟, y; info=Dict()) -> begin
-        s = Zygote.ignore() do
+        s, a = Zygote.ignore() do
             B = length(𝒟[:r])
+            Nbin = length(𝒫[:rs])
             z = reshape(repeat(𝒫[:rs], 1, B)', 1, :)
-            s = repeat(𝒟[:s], 1, length(𝒫[:rs]))
-            vcat(z, s)
+            s = repeat(𝒟[:s], 1, Nbin)
+            vcat(z, s), repeat(𝒟[:a], 1, Nbin)
         end
-        Q = value(critic(π), s, 𝒟[:a])
+        Q = value(critic(π), s, a)
         
         # Store useful information
-        ignore() do
-            info[name] = mean(Q)
+        Zygote.ignore() do
+            info["Qavg"] = mean(Q)
         end
         
         loss(Q, y)
     end
 end
 
-function estimator_logits(vals, s)
+
+function log_err_pf(π, 𝒫, 𝒟, y)
+    B = length(𝒟[:r])
+    Nbin = length(𝒫[:rs])
+    
+    z = reshape(repeat(𝒫[:rs], 1, B)', 1, :)
+    s = vcat(z, repeat(𝒟[:s], 1, Nbin))
+    a = repeat(𝒟[:a], 1, Nbin)
+    
+    Q = value(critic(π), s, a)
+    
+    
+    mean(abs.(log.(reshape(Q, B, Nbin) .+ eps())  .-  log.(reshape(y, B, Nbin)  .+ eps())), dims=2)
+end
+
+
+function abs_err_pf(π, 𝒫, 𝒟, y)
+    B = length(𝒟[:r])
+    Nbin = length(𝒫[:rs])
+    
+    z = reshape(repeat(𝒫[:rs], 1, B)', 1, :)
+    s = vcat(z, repeat(𝒟[:s], 1, Nbin))
+    a = repeat(𝒟[:a], 1, Nbin)
+    
+    Q = value(critic(π), s, a)
+    
+    mean(abs.(reshape(Q, B, Nbin) .- reshape(y, B, Nbin)), dims=2)
+end
+
+function estimator_logits(π, s)
+    
+    trainmode!(π)
+    
+    vals = maximum(vcat([value(π, s) for i=1:10]...), dims=1)
+    
+    
     probs = Crux.logits(px_discrete, s)
     ps = vals .* probs
     ps ./ sum(ps, dims=1)
 end
 
-D_CDF() = LatentConditionedNetwork(DiscreteNetwork(Chain(Dense(4, 64, tanh), Dense(64, 64, tanh), Dense(64, length(discrete_xs), sigmoid)), discrete_xs, estimator_logits, true), [0f0])
+D_CDF() = LatentConditionedNetwork(DiscreteNetwork(Chain(Dense(4, 64, tanh), Dropout(0.1), Dense(64, 64, tanh),  Dropout(0.1), Dense(64, length(discrete_xs), sigmoid)), discrete_xs, estimator_logits, true), [0f0])
 # D_CVaR() = DiscreteNetwork(Chain(Dense(3, 64, tanh), Dense(64, 64, tanh), Dense(64, length(discrete_xs), sigmoid), x->x.*3.15f0), discrete_xs, estimator_logits, true)
-N_cdf=10
-𝒮 = ISDRL_Discrete(π=D_CDF()), 
+N_cdf=2
+cdf_weights=collect(range(0,1,length=N_cdf+1)[2:end])
+cdf_weights ./= sum(cdf_weights)
+𝒮 = ISDRL_Discrete(π=D_CDF(), 
                   px=px_discrete,
                   priority_fn=abs_err_pf, #log_err_pf, abs_err_pf
                   ΔN=20,
                   N_cdf=N_cdf,
+                  cdf_weights=cdf_weights,
+                  target_fn=Crux.CDF_target,
                   α=1e-3, # experiment parameter
                   prioritized=true, # false <- ablation
                   use_likelihood_weights=false, #false (hyperparameter)
@@ -163,7 +218,11 @@ N_cdf=10
                   S=state_space(rmdp))
 solve(𝒮, rmdp)
 
-Dnom = episodes!(Sampler(rmdp, px_discrete, required_columns=[:logprob]), Neps=10000, explore=true)
+
+Dnom = episodes!(Sampler(rmdp, px_discrete, required_columns=[:logprob]), Neps=1000, explore=true)
+
+
+
 
 
 sum(Dnom[:r] .> 1.2)
@@ -175,13 +234,13 @@ plot(Dnom[:s][1, epranges], Dnom[:s][2, epranges], label="")
 plot(Dnom[:s][1, epranges], discrete_xs[Flux.onecold(Dnom[:a][:, epranges])], label="")
 
 
-D = episodes!(Sampler(rmdp, PolicyParams(π=𝒮.agent.π.networks[1], pa=px_discrete), required_columns=[:logprob, :likelihoodweight, :var_prob, :cvar_prob]), Neps=10, explore=true)
+D = episodes!(Sampler(rmdp, PolicyParams(π=𝒮.agent.π, pa=px_discrete), required_columns=[:logprob, :likelihoodweight, :var_prob, :cvar_prob]), Neps=10, explore=true)
 
 sum(D[:r]) / 10
 
 plot(reshape(D[:s][1, :], 20, :), reshape(discrete_xs[Flux.onecold(D[:a][:, :])],  20, :), label="")
 
-pmine = logpdf(𝒮.agent.π.networks[1], Dnom[:s][:, eprangesv], Dnom[:a][:, eprangesv])
+pmine = logpdf(𝒮.agent.π, Dnom[:s][:, eprangesv], Dnom[:a][:, eprangesv])
 
 sum(pmine)
 
@@ -207,10 +266,17 @@ histogram(log.(𝒮.buffer[:likelihoodweight][:]))
 
 drl_samps, drl_weights = get_samples(𝒮.buffer, px_discrete)
 
+
+
+
 plot(log.(drl_weights))
 
 
-D = episodes!(Sampler(rmdp, PolicyParams(π=𝒮.agent.π.networks[1], pa=px_discrete), required_columns=[:logprob, :likelihoodweight, :var_prob, :cvar_prob]), Neps=1, explore=true)
+D = episodes!(Sampler(rmdp, PolicyParams(π=𝒮.agent.π, pa=px_discrete), required_columns=[:logprob, :likelihoodweight, :var_prob, :cvar_prob]), Neps=1, explore=true)
+
+
+Flux.trainmode!(𝒮.agent.π.policy)
+value(𝒮.agent.π.policy, vcat(0.6f0, D[:s]))
 
 plot(D[:s][1,:], D[:s][2,:])
 plot(D[:s][1,:], discrete_xs[Flux.onecold(D[:a])], label="action")

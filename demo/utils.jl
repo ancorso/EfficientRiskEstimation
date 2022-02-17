@@ -1,4 +1,4 @@
-using Plots, Random
+using Plots, Random, StatsBase
 
 function plot_pendulum(mdp, pol, i; ps = plot(), px = plot(), π_explore=pol, Neps=10, label="", skwargs=(;), xkwargs=(;))
     sampler = Sampler(mdp, PolicyParams(π=pol, π_explore=π_explore))
@@ -52,8 +52,12 @@ function compute_risk_cb(period, min_samples_above = 0.1; N_cdf)
             # mfallback = IWRiskMetrics(vals, ones(length(vals)), min_samples_above)
             
             𝒮.𝒫[:rα][1] = m.var #min(m.var, mfallback.var)
-            𝒮.𝒫[:rs] = range(minimum(vals), stop=m.var, steps=N_cdf)
-            𝒮.agent.π.reset_fn = (π) -> π.z = [rand(𝒮.𝒫[:rs])]
+            𝒮.𝒫[:rs] .= Float32.(range(minimum(vals), m.var, length=N_cdf))
+            𝒮.agent.π.reset_fn = (π) -> begin
+                newval = sample(𝒮.𝒫[:rs], Weights(𝒮.𝒫[:cdf_weights]))
+                # println("selected $newval from $(𝒮.𝒫[:rs])")
+                π.z = [newval]
+            end
             # 𝒮.𝒫[:std_rα][1] = 0.5 #Float32(𝒮.𝒫[:rα][1]) /log(N) #Float32(std(vars))
             
             # Log the metrics
@@ -106,16 +110,16 @@ function make_plots(Zs, ws, names, α, Nsteps=10)
 end
 
 
-function log_err_pf(π, D, ys)
-    N = length(ys)
-    sum([abs.(log.(value(n, D[:s], D[:a]) .+ eps())  .-  log.(y  .+ eps())) for (n, y) in zip(π.networks[1:N], ys)])    
-end
-
-
-function abs_err_pf(π, D, ys)
-    N = length(ys)
-    sum([abs.(value(n, D[:s], D[:a])  .-  y) for (n, y) in zip(π.networks[1:N], ys)])
-end
+# function log_err_pf(π, D, ys)
+#     N = length(ys)
+#     sum([abs.(log.(value(n, D[:s], D[:a]) .+ eps())  .-  log.(y  .+ eps())) for (n, y) in zip(π.networks[1:N], ys)])    
+# end
+# 
+# 
+# function abs_err_pf(π, D, ys)
+#     N = length(ys)
+#     sum([abs.(value(n, D[:s], D[:a])  .-  y) for (n, y) in zip(π.networks[1:N], ys)])
+# end
 
 
 function compute_error(α, mc_samps, mc_weights, drl_samps, drl_weights)

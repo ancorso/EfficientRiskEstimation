@@ -73,63 +73,63 @@ px = plot()
 
 # BSON.@save "data/1mil_mcsamps_discreteswingup_$(σ²).bson" mc_samps 
 
-mc_samps = BSON.load("data/1mil_mcsamps_discreteswingup_$(σ²).bson")[:mc_samps]
-mc_weights = ones(length(mc_samps))
-# histogram(mc_samps, ylims=(0,1))
-
-
-# compute risk metrics
-risk_metrics = IWRiskMetrics(mc_samps, mc_weights, 0.001, 10)
-risk_metrics.cvar
-risk_metrics.var
-histogram(risk_metrics.bootstrap_vars)
-std(risk_metrics.bootstrap_vars)
-plot(0.1:0.1:1, risk_metrics.var_cdf)
-
-
-histogram(risk_metrics.bootstrap_vars)
-
-
-risk_metrics.mean
-risk_metrics.worst
-
-risk_metrics.est.Ws[end - 1000 + 1:end]
-
-risk_metrics.est.Ws[]
-mean(risk_metrics.est.Ws[end:end - 1000 + 1].^2)
-
-plot_pendulum(rmdp, px_discrete, 1, Neps=100, ps=ps, px=px, label="MC - discrete")
-plot_pendulum(rmdp, px_continuous, 2, Neps=1000, px=px, ps=ps, label="MC - continuous")
+# mc_samps = BSON.load("data/1mil_mcsamps_discreteswingup_$(σ²).bson")[:mc_samps]
+# mc_weights = ones(length(mc_samps))
+# # histogram(mc_samps, ylims=(0,1))
+# 
+# 
+# # compute risk metrics
+# risk_metrics = IWRiskMetrics(mc_samps, mc_weights, 0.001, 10)
+# risk_metrics.cvar
+# risk_metrics.var
+# histogram(risk_metrics.bootstrap_vars)
+# std(risk_metrics.bootstrap_vars)
+# plot(0.1:0.1:1, risk_metrics.var_cdf)
+# 
+# 
+# histogram(risk_metrics.bootstrap_vars)
+# 
+# 
+# risk_metrics.mean
+# risk_metrics.worst
+# 
+# risk_metrics.est.Ws[end - 1000 + 1:end]
+# 
+# risk_metrics.est.Ws[]
+# mean(risk_metrics.est.Ws[end:end - 1000 + 1].^2)
+# 
+# plot_pendulum(rmdp, px_discrete, 1, Neps=100, ps=ps, px=px, label="MC - discrete")
+# plot_pendulum(rmdp, px_continuous, 2, Neps=1000, px=px, ps=ps, label="MC - continuous")
 
 ## solve with cross entropy
-function cem_loss_weight(d, xin)
-    x = xin[:x]
-    s = rand(initialstate(rmdp))
-    rtot=0.0
-    logweight=0.0
-    for i=1:length(x)
-        @assert !isterminal(rmdp, s)
-        logweight += logpdf(px_discrete, s, [x[i]])[1]
-        s, r = gen(rmdp, s, x[i])
-        rtot += r
-    end
-    @assert isterminal(rmdp, s)
-    return rtot, exp(logweight - logpdf(d,xin))
-end
-
-
-d0 = Dict{Symbol, Tuple{Sampleable, Int64}}(:x => (DiscreteNonParametric(discrete_xs, ones(Float32, length(discrete_xs)) ./ length(discrete_xs)), 20))
-vals, weights, dopt = cem(cem_loss_weight, d0, max_iter=10, N=1000, α=1e-3)
-
-histogram(vals, ylims=(0,100))
-histogram(log.(weights), ylims=(0,100))
-
-histogram(log.(drl_weights))
-
-cem_policy = DistributionPolicy(dopt[1][:x][1])
-plot_pendulum(rmdp, cem_policy, 3, Neps=100, px=px, ps=ps, label="CEM")
-
-plot(ps, legend=:bottomleft)
+# function cem_loss_weight(d, xin)
+#     x = xin[:x]
+#     s = rand(initialstate(rmdp))
+#     rtot=0.0
+#     logweight=0.0
+#     for i=1:length(x)
+#         @assert !isterminal(rmdp, s)
+#         logweight += logpdf(px_discrete, s, [x[i]])[1]
+#         s, r = gen(rmdp, s, x[i])
+#         rtot += r
+#     end
+#     @assert isterminal(rmdp, s)
+#     return rtot, exp(logweight - logpdf(d,xin))
+# end
+# 
+# 
+# d0 = Dict{Symbol, Tuple{Sampleable, Int64}}(:x => (DiscreteNonParametric(discrete_xs, ones(Float32, length(discrete_xs)) ./ length(discrete_xs)), 20))
+# vals, weights, dopt = cem(cem_loss_weight, d0, max_iter=10, N=1000, α=1e-3)
+# 
+# histogram(vals, ylims=(0,100))
+# histogram(log.(weights), ylims=(0,100))
+# 
+# histogram(log.(drl_weights))
+# 
+# cem_policy = DistributionPolicy(dopt[1][:x][1])
+# plot_pendulum(rmdp, cem_policy, 3, Neps=100, px=px, ps=ps, label="CEM")
+# 
+# plot(ps, legend=:bottomleft)
 
 
 ## Setup and run deep rl approach
@@ -184,9 +184,10 @@ end
 
 function estimator_logits(π, s)
     
-    trainmode!(π)
+    # trainmode!(π)
     
-    vals = maximum(vcat([value(π, s) for i=1:10]...), dims=1)
+    # vals = maximum(vcat([value(π, s) for i=1:10]...), dims=1)
+    vals = value(π, s)
     
     
     probs = Crux.logits(px_discrete, s)
@@ -194,8 +195,9 @@ function estimator_logits(π, s)
     ps ./ sum(ps, dims=1)
 end
 
-D_CDF() = LatentConditionedNetwork(DiscreteNetwork(Chain(Dense(4, 64, tanh), Dropout(0.1), Dense(64, 64, tanh),  Dropout(0.1), Dense(64, length(discrete_xs), sigmoid)), discrete_xs, estimator_logits, true), [0f0])
-# D_CVaR() = DiscreteNetwork(Chain(Dense(3, 64, tanh), Dense(64, 64, tanh), Dense(64, length(discrete_xs), sigmoid), x->x.*3.15f0), discrete_xs, estimator_logits, true)
+# D_CDF() = LatentConditionedNetwork(DiscreteNetwork(Chain(Dense(4, 64, tanh), Dropout(0.1), Dense(64, 64, tanh),  Dropout(0.1), Dense(64, length(discrete_xs), sigmoid)), discrete_xs, estimator_logits, true), [0f0])
+D_CVaR() = DiscreteNetwork(Chain(Dense(3, 64, tanh), Dense(64, 64, tanh), Dense(64, length(discrete_xs), sigmoid), x->x.*3.15f0), discrete_xs, estimator_logits, true)
+D_CVaR() = DiscreteNetwork(Chain(Dense(3, 64, tanh), Dense(64, 64, tanh), Dense(64, length(discrete_xs), sigmoid), x->x.*3.15f0), discrete_xs, estimator_logits, true)
 N_cdf=2
 cdf_weights=collect(range(0,1,length=N_cdf+1)[2:end])
 cdf_weights ./= sum(cdf_weights)

@@ -56,17 +56,17 @@ end
 function var_loss(π, 𝒫, 𝒟; info = Dict())
 	new_probs = logpdf(π, 𝒟[:s], 𝒟[:a])
 	# nom_probs = logpdf(P.π, 𝒟[:s], 𝒟[:a])
-	e_loss = -mean(entropy(π, 𝒟[:s]))
+	# e_loss = -mean(entropy(π, 𝒟[:s]))
 	
 	Flux.Zygote.ignore() do
-		info[:entropy] = -e_loss
+		# info[:entropy] = -e_loss
 		info[:kl] = mean(𝒟[:logprob] .- new_probs)
 		info[:mean_weight] = mean(𝒟[:cum_importance_weight])
 		info[:target] = 𝒫[:var_target][1]
 		
 	end 
 	
-	-mean(new_probs .* ((𝒟[:return] .> 𝒫[:var_target][1]) .* 𝒟[:cum_importance_weight] .- Float32(α))) #+ 0.01f0*e_loss
+	-mean(new_probs .* ((𝒟[:return] .> 𝒫[:var_target][1]) .* 𝒟[:cum_importance_weight] .- Float32(𝒫[:α]))) #+ 0.01f0*e_loss
 	# -mean(new_probs .* ((𝒟[:return] .> 𝒫[:var_target][1]) .* 𝒟[:cum_importance_weight] .- value(π, 𝒟[:s]))) #+ 0.01f0*e_loss
 	# -mean(new_probs .* (𝒟[:return] .> 𝒫[:var_target][1]))
 end
@@ -80,11 +80,11 @@ function policy_match_logits(P)
     (π, s) -> softmax(log.(softplus.(value(π, s))) .+ logps)
 end
 
-function DeepSampler(;Px, mdp, πfn, elite_frac=0.1, αscale=1.1f0, actor_batch_size=1024, target_kl=0.1f0)
+function DeepSampler(;Px, mdp, πfn, α, elite_frac=0.1, αscale=1.1f0, actor_batch_size=1024, target_kl=0.1f0)
     # Solver setup for training
     𝒮 = OnPolicySolver(;agent=PolicyParams(π=πfn(), pa=Px),
                     S=state_space(mdp),
-                    𝒫 = (;var_target=[0.0]),
+                    𝒫 = (;var_target=[0.0],α),
                     log = LoggerParams(;dir="log/DeepAMIS"),
                     a_opt = TrainingParams(;loss=var_loss, name = "actor_", batch_size=actor_batch_size, early_stopping = (infos) -> (infos[end][:kl] > target_kl)),
                     # c_opt=TrainingParams(;loss=baseline_loss, name = "critic_", max_batches=50, batch_size=1024),

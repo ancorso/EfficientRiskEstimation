@@ -17,14 +17,19 @@ function continuous_rule(k1, k2, k3)
     end
 end
 
-function gen_topple_mdp(;dt=0.2, failure_thresh=π/4, Nsteps=20, xs=[-1f0, -0.25f0, 0f0, 0.25f0, 1f0], px=Normal(0, 0.2))
+function gen_topple_mdp(;dt=0.2, failure_thresh=π/4, Nsteps=20, xs=[-1f0, -0.25f0, 0f0, 0.25f0, 1f0], px=Normal(0, 0.2), discrete=true)
    maxT = dt*(Nsteps-1)
 
    env = InvertedPendulumMDP(λcost=0.0f0, failure_thresh=failure_thresh, dt=dt)
    policy = FunPolicy(continuous_rule(0.0, 2.0, -1)) 
-   probs = pdf.(px, xs)
-   Px = DistributionPolicy(DiscreteNonParametric(xs, probs ./ sum(probs)))
-   println(probs ./ sum(probs))
+   
+   if discrete
+      probs = pdf.(px, xs)
+      Px = DistributionPolicy(DiscreteNonParametric(xs, probs ./ sum(probs)))
+   else
+      Px = DistributionPolicy(px)
+   end
+   
    # cost environment
    costfn(m, s, sp) = isterminal(m, sp) ? abs(s[2]) : 0
    return Px, RMDP(env, policy, costfn, true, dt, maxT, :arg)

@@ -13,7 +13,7 @@ for α in [1e-2, 1e-3, 1e-4, 1e-5]
 
 	# Setup output directory
 	dir = "output/pendulum_topple_α=$(α)"
-	mkdir(dir)
+	try mkdir(dir) catch end
 
 	## Generate the problem setup
 	Px, mdp = gen_topple_mdp(px=Normal(0, 0.4), Nsteps=20, dt=0.1, failure_thresh=π/4)
@@ -47,14 +47,14 @@ for α in [1e-2, 1e-3, 1e-4, 1e-5]
 	πfn = () -> Π(logit_conversion=policy_match_logits(Px))
 
 	# Regular adaptive importance sampling
-	d0, update_distribution = DeepSampler(;Px, mdp, πfn)
+	d0, update_distribution = DeepSampler(;Px, mdp, πfn, α)
 	DAIS_data = AMIS(N=N_experiment; P, Ntrials, α, Nsamps_per_update, d0, update_distribution)
 
 	save_data(dir, "DAIS", DAIS_data, color=3, cdata=[MC_data], cnames=["MC"], ccolors=[1])
 	save_trajectories(mdp, DAIS_data[1][:dists][end].sampler.agent.π, dir, "DAIS", color=3, cπs=[Px], cnames=["MC"], ccolors=[1])
 
 	# Adaptive multiple importance sampling (using DM weights across time)
-	d0, update_distribution = DeepSampler(;Px, mdp, πfn)
+	d0, update_distribution = DeepSampler(;Px, mdp, πfn, α)
 	DAMIS_data = AMIS(N=N_experiment, weight_style=:DM; P, Ntrials, α, Nsamps_per_update, d0, update_distribution)
 
 	save_data(dir, "DAMIS", DAMIS_data, color=4, cdata=[MC_data], cnames=["MC"], ccolors=[1])
@@ -62,7 +62,7 @@ for α in [1e-2, 1e-3, 1e-4, 1e-5]
 
 
 	## Multiple Importance Sampling variation
-	d0, update_distribution = DeepSampler(;Px, mdp, πfn)
+	d0, update_distribution = DeepSampler(;Px, mdp, πfn, α)
 	d0 = MISDistribution([P, Pu, d0], [1,1,8])
 	MIS_DAIS_data = AMIS(N=N_experiment; P, Ntrials, α, Nsamps_per_update, d0, update_distribution)
 
@@ -71,7 +71,7 @@ for α in [1e-2, 1e-3, 1e-4, 1e-5]
 
 
 	d0 = MISDistribution([P, Pu, d0], [1,1,8])
-	d0, update_distribution = DeepSampler(;Px, mdp, πfn)
+	d0, update_distribution = DeepSampler(;Px, mdp, πfn, α)
 	MIS_DAMIS_data = AMIS(N=N_experiment, weight_style=:DM; P, Ntrials, α, Nsamps_per_update, d0, update_distribution)
 
 	save_data(dir, "MIS_DAMIS", MIS_DAMIS_data, color=6, cdata=[MC_data], cnames=["MC"], ccolors=[1])

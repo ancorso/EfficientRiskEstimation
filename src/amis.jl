@@ -122,10 +122,10 @@ function AMIS(;N, # Total number of samples to get
 		end
 		if saveall
 			data[:xs] = xs
-			data[:fs] = fs
-			data[:ws] = ws
 			data[:dists] = [d0, dists...]
 		end
+		data[:fs] = fs
+		data[:ws] = ws
 		push!(datas, deepcopy(data))
 	end
 	Ntrials==1 ? datas[1] : datas

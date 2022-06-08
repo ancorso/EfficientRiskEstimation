@@ -30,7 +30,7 @@ function plot_convergence(datas::T; key=:var, title=string(key), p=plot(xscale=:
 	plot!(p, samps[1], mean(results), ribbon=std(results), label=label; kwargs...)
 end
 
-function plot_cdf(data::T; label="", title="1 - CDF", p=hline([α], label="α=$(α)", title=title), kwargs...) where {T <: Array}
+function plot_cdf(data::T; α=data[1][:α], label="", title="1 - CDF", p=hline([α], label="α=$(α)", title=title), kwargs...) where {T <: Array}
 	for (d, i) in zip(data, 1:length(data))
 		plot_cdf(d, label=string(label, "-$i"), p=p; kwargs...)
 	end
